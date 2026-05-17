@@ -5,7 +5,20 @@ import httpx
 import pandas as pd
 from datetime import datetime
 import sys
+
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
+# Load secrets from Streamlit Cloud or local .env
+try:
+    os.environ["ARIZE_API_KEY"] = st.secrets["ARIZE_API_KEY"]
+    os.environ["ARIZE_SPACE_ID"] = st.secrets["ARIZE_SPACE_ID"]
+    os.environ["GROQ_API_KEY"] = st.secrets["GROQ_API_KEY"]
+    os.environ["SLACK_WEBHOOK_URL"] = st.secrets["SLACK_WEBHOOK_URL"]
+    os.environ["ALERT_THRESHOLD"] = st.secrets["ALERT_THRESHOLD"]
+except:
+    from dotenv import load_dotenv
+
+    load_dotenv()
 
 # Page config
 st.set_page_config(
@@ -16,7 +29,7 @@ st.set_page_config(
 
 PHOENIX_BASE_URL = "http://localhost:6006"
 
-# ── Custom CSS ──────────────────────────────────────────
+# Custom CSS
 st.markdown("""
 <style>
     .main { background-color: #0e1117; }
@@ -56,26 +69,36 @@ st.markdown("""
 </style>
 """, unsafe_allow_html=True)
 
-# ── Helper functions ─────────────────────────────────────
+
+# Helper functions
 def get_available_projects() -> list[str]:
     try:
-        response = httpx.get(f"{PHOENIX_BASE_URL}/v1/projects", timeout=5)
-        projects = response.json().get("data", [])
-        names = [p["name"] for p in projects if p["name"] != "default"]
-        return names if names else ["ai-coroner-demo"]
+        response = httpx.get(f"{PHOENIX_BASE_URL}/v1/projects", timeout=2)
+        if response.status_code == 200:
+            projects = response.json().get("data", [])
+            names = [p["name"] for p in projects if p["name"] != "default"]
+            return names if names else ["ai-coroner-demo"]
     except:
-        return ["ai-coroner-demo"]
+        pass
+    return ["ai-coroner-demo"]
+
 
 def run_autopsy(project_name: str):
     from agent.fetcher.fetcher_agent import fetch_and_filter_traces
     from agent.analyzer.analyzer_agent import analyze_failures
     from agent.reporter.reporter_agent import generate_report
+    from agent.history import save_result
+    from agent.alerts import send_slack_alert
+
     fetcher_results = fetch_and_filter_traces(project_name)
     analysis = analyze_failures(fetcher_results)
     report = generate_report(analysis)
+    save_result(analysis, project_name)
+    send_slack_alert(analysis, project_name, report)
     return analysis, report
 
-# ── Header ───────────────────────────────────────────────
+
+# Header
 st.markdown("""
 <div class="header-bar">
     <h1 style="color:white; margin:0;">🔬 The AI Coroner</h1>
@@ -83,7 +106,7 @@ st.markdown("""
 </div>
 """, unsafe_allow_html=True)
 
-# ── Step 1: Select App ───────────────────────────────────
+# Step 1: Select App
 st.markdown("### Step 1 — Select the LLM app to monitor")
 projects = get_available_projects()
 
@@ -94,9 +117,9 @@ for i, project in enumerate(projects):
     with cols[i % 4]:
         is_selected = selected_project == project
         if st.button(
-            f"{'✅ ' if is_selected else ''}{project}",
-            key=f"proj_{project}",
-            use_container_width=True
+                f"{'✅ ' if is_selected else ''}{project}",
+                key=f"proj_{project}",
+                use_container_width=True
         ):
             st.session_state["selected_project"] = project
             selected_project = project
@@ -104,7 +127,7 @@ for i, project in enumerate(projects):
 
 st.divider()
 
-# ── Step 2: Run Autopsy ──────────────────────────────────
+# Step 2: Run Autopsy
 st.markdown("### Step 2 — Run the autopsy")
 
 col_btn, col_info = st.columns([1, 3])
@@ -112,7 +135,8 @@ with col_btn:
     run_clicked = st.button("🔬 Run Autopsy", use_container_width=True)
 
 with col_info:
-    st.info(f"📡 Monitoring: **{selected_project}** — The AI Coroner will fetch live traces, detect failures, and generate a diagnosis report.")
+    st.info(
+        f"Monitoring: **{selected_project}** — The AI Coroner will fetch live traces, detect failures, and generate a diagnosis report.")
 
 if run_clicked:
     with st.spinner("🔬 Performing autopsy — fetching traces, clustering failures, generating report..."):
@@ -124,7 +148,7 @@ if run_clicked:
 
 st.divider()
 
-# ── Step 3: Results ──────────────────────────────────────
+# Step 3: Results
 if "analysis" in st.session_state:
     analysis = st.session_state["analysis"]
     report = st.session_state["report"]
@@ -143,6 +167,7 @@ if "analysis" in st.session_state:
         st.error(f"🔴 Critical — {analysis['failure_rate']}% failure rate! Immediate action required.")
 
     st.markdown("<br>", unsafe_allow_html=True)
+
     # Historical trend chart
     from agent.history import load_history
 
@@ -150,8 +175,6 @@ if "analysis" in st.session_state:
 
     if len(history) > 1:
         st.subheader("📈 Failure Rate Over Time")
-        import pandas as pd
-
         trend_data = pd.DataFrame([
             {
                 "Time": h["timestamp"][11:16],
@@ -192,7 +215,7 @@ if "analysis" in st.session_state:
 
     st.markdown("<br>", unsafe_allow_html=True)
 
-    # Chart + Clusters side by side
+    # Chart + Clusters
     if analysis["clusters"]:
         left, right = st.columns([1, 2])
 
@@ -209,22 +232,19 @@ if "analysis" in st.session_state:
             for i, cluster in enumerate(analysis["clusters"], 1):
                 pattern = cluster["pattern"]
                 with st.expander(
-                    f"#{i}  {pattern['name']}  —  {cluster['count']} occurrence{'s' if cluster['count'] > 1 else ''}",
-                    expanded=i == 1
+                        f"#{i}  {pattern['name']}  —  {cluster['count']} occurrence{'s' if cluster['count'] > 1 else ''}",
+                        expanded=i == 1
                 ):
                     st.error(f"**Root Cause:** {pattern['description']}")
-
                     for j, ex in enumerate(cluster["examples"], 1):
                         st.markdown(f"**Example {j}:**")
                         st.markdown(f"🧑 User: `{ex['input']}`")
                         st.markdown(f"🤖 Bot: _{ex['output'][:180]}..._")
                         if j < len(cluster["examples"]):
                             st.divider()
-
                     st.success(f"💊 **Fix:** {cluster['fix']}")
-
     else:
-        st.success("✅ No failure patterns detected — your LLM app is performing perfectly!")
+        st.success("✅ No failure patterns detected!")
 
     st.divider()
 
@@ -260,11 +280,10 @@ if "analysis" in st.session_state:
         st.markdown(report)
 
 else:
-    # Empty state — guide the user
     st.markdown("### Step 3 — Results will appear here")
     st.markdown("""
     <div class="step-box">🔍 Click <b>Run Autopsy</b> above to start analyzing your LLM app</div>
-    <div class="step-box">📊 The AI Coroner will fetch live traces from Phoenix</div>
+    <div class="step-box">📊 The AI Coroner will fetch live traces from Arize</div>
     <div class="step-box">🧠 Failures will be clustered and diagnosed automatically</div>
     <div class="step-box">📄 A full autopsy report will be generated with prescribed fixes</div>
     """, unsafe_allow_html=True)
