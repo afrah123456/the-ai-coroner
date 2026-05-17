@@ -5,7 +5,7 @@ sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 import litellm
 import time
 import random
-from arize.otel import register as arize_register
+from phoenix.otel import register as phoenix_register
 from openinference.instrumentation.litellm import LiteLLMInstrumentor
 from dotenv import load_dotenv
 
@@ -14,36 +14,24 @@ from dummy_app.questions import QUESTIONS
 
 load_dotenv()
 
-ARIZE_API_KEY = os.getenv("ARIZE_API_KEY")
-ARIZE_SPACE_ID = os.getenv("ARIZE_SPACE_ID")
+PHOENIX_API_KEY = os.getenv("PHOENIX_API_KEY")
+PHOENIX_SPACE_URL = os.getenv("PHOENIX_SPACE_URL", "https://app.phoenix.arize.com/s/shahabuddin-af")
 os.environ["GROQ_API_KEY"] = os.getenv("GROQ_API_KEY")
 
-# Register with BOTH Arize cloud AND local Phoenix
-import phoenix as px
-px.launch_app()
+# Send traces to Phoenix cloud
+os.environ["PHOENIX_API_KEY"] = PHOENIX_API_KEY
+os.environ["PHOENIX_COLLECTOR_ENDPOINT"] = f"{PHOENIX_SPACE_URL}"
 
-from phoenix.otel import register as phoenix_register
-from opentelemetry.sdk.trace.export import SimpleSpanProcessor
-from arize.otel import register as arize_register
-
-# Phoenix tracer
-phoenix_provider = phoenix_register(
+tracer_provider = phoenix_register(
     project_name=APP_NAME,
-    auto_instrument=False
+    auto_instrument=True,
+    endpoint=f"{PHOENIX_SPACE_URL}/v1/traces",
+    headers={"Authorization": f"Bearer {PHOENIX_API_KEY}"}
 )
 
-# Arize cloud tracer
-arize_provider = arize_register(
-    space_id=ARIZE_SPACE_ID,
-    api_key=ARIZE_API_KEY,
-    project_name=APP_NAME,
-)
-
-# Instrument LiteLLM with Phoenix
-LiteLLMInstrumentor().instrument(tracer_provider=phoenix_provider)
+LiteLLMInstrumentor().instrument(tracer_provider=tracer_provider)
 
 def ask_question(question: str):
-    """Send one question to ShopBot."""
     try:
         response = litellm.completion(
             model="groq/llama-3.1-8b-instant",
@@ -62,7 +50,7 @@ def ask_question(question: str):
 
 def run_continuous(interval_seconds: int = 10):
     print("ShopBot LIVE - sending questions continuously...")
-    print(f"   New question every {interval_seconds} seconds")
+    print(f"   Logging to Phoenix cloud: {PHOENIX_SPACE_URL}")
     print("   Press Ctrl+C to stop\n")
     count = 0
     while True:
@@ -74,10 +62,11 @@ def run_continuous(interval_seconds: int = 10):
 
 def run_once():
     print("Running ShopBot once...\n")
+    print(f"   Logging to Phoenix cloud: {PHOENIX_SPACE_URL}\n")
     for i, question in enumerate(QUESTIONS, 1):
         print(f"[{i}/{len(QUESTIONS)}] ", end="")
         ask_question(question)
-    print("Done! Traces logged to Phoenix and Arize cloud.")
+    print("Done! Check app.phoenix.arize.com for traces.")
 
 if __name__ == "__main__":
     import argparse

@@ -45,23 +45,46 @@ def get_traces(project_name: str = "ai-coroner-demo", limit: int = 50) -> list[d
 
     # Fall back to Arize cloud Phoenix
     print("Using Arize cloud Phoenix...")
+    headers = {"Authorization": f"Bearer {PHOENIX_API_KEY}"}
+
     try:
-        response = httpx.get(
-            f"{PHOENIX_SPACE_URL}/v1/projects/{project_name}/spans",
-            headers={
-                "Authorization": f"Bearer {PHOENIX_API_KEY}",
-            },
+        # First get project ID from name
+        projects_response = httpx.get(
+            f"{PHOENIX_SPACE_URL}/v1/projects",
+            headers=headers,
             timeout=10
         )
-        print(f"Status: {response.status_code}")
-        response.raise_for_status()
-        spans = response.json().get("data", [])
+        projects_response.raise_for_status()
+        projects = projects_response.json().get("data", [])
+
+        # Find project by name
+        project_id = None
+        for p in projects:
+            if p.get("name") == project_name:
+                project_id = p.get("id")
+                break
+
+        if not project_id:
+            print(f"Project '{project_name}' not found in cloud")
+            print(f"Available: {[p.get('name') for p in projects]}")
+            return []
+
+        print(f"Found project ID: {project_id}")
+
+        # Fetch spans using project name directly
+        spans_response = httpx.get(
+            f"{PHOENIX_SPACE_URL}/v1/projects/{project_id}/spans",
+            headers=headers,
+            timeout=10
+        )
+        spans_response.raise_for_status()
+        spans = spans_response.json().get("data", [])
         print(f"Fetched {len(spans)} spans from Arize cloud Phoenix")
         return spans
+
     except Exception as e:
         print(f"Arize cloud Phoenix failed: {e}")
         return []
-
 
 def get_span_details(span_id: str) -> Optional[dict]:
     """Fetch details of a specific span."""
