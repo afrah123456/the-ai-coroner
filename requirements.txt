@@ -1,0 +1,12 @@
+streamlit
+httpx
+pandas
+python-dotenv
+arize-phoenix
+arize-otel
+litellm
+openinference-instrumentation-litellm
+fastmcp
+mcp
+schedule
+arize
