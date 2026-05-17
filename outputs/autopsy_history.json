@@ -1,0 +1,11 @@
+[
+  {
+    "timestamp": "2026-05-17T18:39:25.162640",
+    "project": "ai-coroner-demo",
+    "total_interactions": 0,
+    "total_failures": 0,
+    "failure_rate": 0.0,
+    "cluster_count": 0,
+    "patterns": []
+  }
+]

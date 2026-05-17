@@ -1,0 +1,14 @@
+[project]
+name = "the-ai-coroner"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+requires-python = ">=3.12"
+dependencies = [
+    "arize>=8.27.0",
+    "arize-phoenix>=15.10.0",
+    "google-generativeai>=0.8.6",
+    "openai>=2.37.0",
+    "opentelemetry-instrumentation-openai>=0.60.0",
+    "python-dotenv>=1.2.2",
+]
