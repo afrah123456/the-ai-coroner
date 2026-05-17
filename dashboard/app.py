@@ -15,6 +15,8 @@ try:
     os.environ["GROQ_API_KEY"] = st.secrets["GROQ_API_KEY"]
     os.environ["SLACK_WEBHOOK_URL"] = st.secrets["SLACK_WEBHOOK_URL"]
     os.environ["ALERT_THRESHOLD"] = st.secrets["ALERT_THRESHOLD"]
+    os.environ["PHOENIX_API_KEY"] = st.secrets["PHOENIX_API_KEY"]
+    os.environ["PHOENIX_SPACE_URL"] = st.secrets["PHOENIX_SPACE_URL"]
 except:
     from dotenv import load_dotenv
 
@@ -72,14 +74,34 @@ st.markdown("""
 
 # Helper functions
 def get_available_projects() -> list[str]:
+    # Try local Phoenix first
     try:
         response = httpx.get(f"{PHOENIX_BASE_URL}/v1/projects", timeout=2)
         if response.status_code == 200:
             projects = response.json().get("data", [])
             names = [p["name"] for p in projects if p["name"] != "default"]
-            return names if names else ["ai-coroner-demo"]
+            if names:
+                return names
     except:
         pass
+
+    # Try Arize cloud Phoenix
+    try:
+        phoenix_space_url = os.getenv("PHOENIX_SPACE_URL", "https://app.phoenix.arize.com/s/shahabuddin-af")
+        phoenix_api_key = os.getenv("PHOENIX_API_KEY", "")
+        response = httpx.get(
+            f"{phoenix_space_url}/v1/projects",
+            headers={"Authorization": f"Bearer {phoenix_api_key}"},
+            timeout=5
+        )
+        if response.status_code == 200:
+            projects = response.json().get("data", [])
+            names = [p["name"] for p in projects if p["name"] != "default"]
+            if names:
+                return names
+    except:
+        pass
+
     return ["ai-coroner-demo"]
 
 
@@ -283,7 +305,7 @@ else:
     st.markdown("### Step 3 — Results will appear here")
     st.markdown("""
     <div class="step-box">🔍 Click <b>Run Autopsy</b> above to start analyzing your LLM app</div>
-    <div class="step-box">📊 The AI Coroner will fetch live traces from Arize</div>
+    <div class="step-box">📊 The AI Coroner will fetch live traces from Arize Phoenix</div>
     <div class="step-box">🧠 Failures will be clustered and diagnosed automatically</div>
     <div class="step-box">📄 A full autopsy report will be generated with prescribed fixes</div>
     """, unsafe_allow_html=True)
