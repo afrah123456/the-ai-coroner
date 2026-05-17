@@ -111,6 +111,16 @@ def run_autopsy(project_name: str):
     from agent.reporter.reporter_agent import generate_report
     from agent.history import save_result
     from agent.alerts import send_slack_alert
+    from agent.fetcher.arize_client import get_traces
+
+    # Debug — show raw spans
+    spans = get_traces(project_name)
+    st.write(f"Debug: fetched {len(spans)} raw spans")
+    if spans:
+        attrs = spans[0].get("attributes", {})
+        st.write(f"Debug first span keys: {list(attrs.keys())[:5]}")
+        st.write(f"Debug input sample: {str(attrs.get('llm.input_messages.1.message.content', 'NOT FOUND'))[:100]}")
+        st.write(f"Debug output sample: {str(attrs.get('llm.output_messages.0.message.content', 'NOT FOUND'))[:100]}")
 
     fetcher_results = fetch_and_filter_traces(project_name)
     analysis = analyze_failures(fetcher_results)
@@ -118,7 +128,6 @@ def run_autopsy(project_name: str):
     save_result(analysis, project_name)
     send_slack_alert(analysis, project_name, report)
     return analysis, report
-
 
 # Header
 st.markdown("""
